@@ -1,0 +1,11 @@
+### Start Register
+POST http://localhost:3000/auth/register/start
+Content-Type: application/json
+
+{
+    "username": "exampleUser",
+    "email": "email@gmail.com"
+}
+
+### Health Check
+GET http://localhost:3000/auth
