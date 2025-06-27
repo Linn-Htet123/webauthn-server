@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Session } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import {
   AuthenticationResponseJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
+import { CreateUserDto } from 'src/user/dto/createUser.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -13,21 +14,9 @@ export class AuthController {
     return { status: 'ok' };
   }
   @Post('register/start')
-  async startRegistration(
-    @Body() body: { username: string; email: string },
-    @Session() session: Record<string, any>,
-  ) {
-    const user = await this.authService.findOrCreateUserByEmail(
-      body.username,
-      body.email,
-    );
-    session.user = {
-      id: user._id,
-      username: user.username,
-      email: user.email,
-    };
-
-    const options = await this.authService.generateRegistrationOptions(user);
+  async startRegistration(@Body() createUser: CreateUserDto) {
+    const options =
+      await this.authService.generateRegistrationOptions(createUser);
     return options;
   }
 
@@ -35,32 +24,22 @@ export class AuthController {
   async completeRegistration(
     @Body()
     body: {
-      email: string;
+      email: CreateUserDto['email'];
       registrationResponse: RegistrationResponseJSON;
     },
   ) {
-    const user = await this.authService.findUserByEmail(body.email);
-    if (!user) {
-      throw new Error('User not found');
-    }
+    const isVerified = await this.authService.verifyRegistration(body);
 
-    const verification = await this.authService.verifyRegistration(
-      body.registrationResponse,
-      user,
-    );
-    await this.authService.savePasskey(user, verification);
+    if (!isVerified) {
+      throw new Error('Registration verification failed');
+    }
 
     return { message: 'Registration completed' };
   }
 
   @Post('login/start')
-  async startLogin(@Body() body: { email: string }) {
-    const user = await this.authService.findUserByEmail(body.email);
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    const options = await this.authService.generateLoginOptions(user);
+  async startLogin(@Body() body: { email: CreateUserDto['email'] }) {
+    const options = await this.authService.generateLoginOptions(body);
     return options;
   }
 
@@ -68,20 +47,11 @@ export class AuthController {
   async completeLogin(
     @Body()
     body: {
-      email: string;
+      email: CreateUserDto['email'];
       loginResponse: AuthenticationResponseJSON;
     },
   ) {
-    const user = await this.authService.findUserByEmail(body.email);
-
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    const verification = await this.authService.verifyLogin(
-      body.loginResponse,
-      user,
-    );
+    const verification = await this.authService.verifyLogin(body);
     return { message: 'Login completed', verification };
   }
 }

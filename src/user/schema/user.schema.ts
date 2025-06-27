@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import { Passkey, PasskeySchema } from './passkeys.schema';
+import { Passkey, PasskeySchema } from 'src/passkey/schema/passkeys.schema';
 
 export type UserDocument = HydratedDocument<User>;
 
