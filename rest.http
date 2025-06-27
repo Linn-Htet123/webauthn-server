@@ -3,9 +3,9 @@ POST http://localhost:3000/auth/register/start
 Content-Type: application/json
 
 {
-    "username": "exampleUser",
-    "email": "email@gmail.com"
+    "username": "testuser",
+    "email": "testUser@gmail.com"
 }
 
 ### Health Check
-GET http://localhost:3000/auth
+GET http://localhost:3000/auth/test
