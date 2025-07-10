@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuthenticationResponseJSON,
   generateAuthenticationOptions,
@@ -116,7 +116,7 @@ export class AuthService {
     const user = await this.userService.findUserByEmail(email);
 
     if (!user) {
-      throw new Error('User not found');
+      throw new NotFoundException('User not found');
     }
     const options: PublicKeyCredentialRequestOptionsJSON =
       await generateAuthenticationOptions({

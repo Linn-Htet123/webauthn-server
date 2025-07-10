@@ -1,4 +1,3 @@
-// repositories/base.repository.ts
 import { Document, FilterQuery, Model, UpdateQuery } from 'mongoose';
 import { DeleteResult, UpdateResult } from 'mongodb';
 import { IBaseRepository } from './interfaces/base-repository.interface';
