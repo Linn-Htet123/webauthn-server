@@ -1,7 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { UserDocument } from './schema/user.schema';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   AuthenticationResponseJSON,
   generateAuthenticationOptions,
@@ -12,62 +9,32 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
-import { Passkey } from './schema/passkeys.schema';
+import { UserService } from 'src/user/user.service';
+import { PasskeyService } from 'src/passkey/passkey.service';
+import { ConfigService } from '@nestjs/config';
+import { CreateUserDto } from 'src/user/dto/createUser.dto';
+import { Passkey } from 'src/passkey/schema/passkeys.schema';
 
 @Injectable()
 export class AuthService {
-  private readonly rpName = 'WebAuthn Example';
-  private readonly rpID = 'localhost';
-  private readonly origin = `http://${this.rpID}:5173`;
+  private rpName = 'WebAuthn Example';
+  private rpID = 'localhost';
+  private origin = `http://${this.rpID}:3000`;
 
   constructor(
-    @InjectModel('User') private readonly userModel: Model<UserDocument>,
-  ) {}
-
-  async findUserByEmail(email: string): Promise<UserDocument | null> {
-    const user = await this.userModel
-      .findOne({ email })
-      .populate('passkeys')
-      .exec();
-
-    if (!user) {
-      return null;
-    }
-
-    return user;
-  }
-
-  async createNewUser(username: string, email: string): Promise<UserDocument> {
-    const newUser = new this.userModel({
-      username,
-      email,
-      passkeys: [],
-      currentChallenge: '',
-    });
-
-    try {
-      const savedUser = await newUser.save();
-
-      return savedUser;
-    } catch (error) {
-      throw new Error('Error creating new user' + error);
-    }
-  }
-
-  async findOrCreateUserByEmail(
-    username: string,
-    email: string,
-  ): Promise<UserDocument> {
-    const user = await this.findUserByEmail(email);
-    if (!user) {
-      return await this.createNewUser(username, email);
-    }
-    return user;
+    private readonly configService: ConfigService,
+    private readonly userService: UserService,
+    private readonly passkeyService: PasskeyService,
+  ) {
+    this.rpName = this.configService.get<string>('RP_NAME') || this.rpName;
+    this.rpID = this.configService.get<string>('RP_ID') || this.rpID;
+    this.origin = this.configService.get<string>('ORIGIN') || this.origin;
   }
 
   async generateRegistrationOptions(
-    user: UserDocument,
+    createUser: CreateUserDto,
   ): Promise<PublicKeyCredentialCreationOptionsJSON> {
+    const user = await this.userService.findOrCreateUserByEmail(createUser);
     const options: PublicKeyCredentialCreationOptionsJSON =
       await generateRegistrationOptions({
         rpName: this.rpName,
@@ -88,46 +55,42 @@ export class AuthService {
 
     user.currentChallenge = options.challenge;
     console.log(user.currentChallenge);
-    await this.userModel.findOneAndUpdate(
-      {
-        _id: user._id,
-      },
-      {
-        currentChallenge: options.challenge,
-      },
-    );
+    await this.userService.updateUser(user._id, {
+      currentChallenge: options.challenge,
+    });
 
     return options;
   }
 
-  async verifyRegistration(
-    body: RegistrationResponseJSON,
-    user: UserDocument,
-  ): Promise<VerifiedRegistrationResponse> {
+  async verifyRegistration({
+    email,
+    registrationResponse,
+  }: {
+    email: CreateUserDto['email'];
+    registrationResponse: RegistrationResponseJSON;
+  }): Promise<boolean> {
+    const user = await this.userService.findUserByEmail(email);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
     const verification: VerifiedRegistrationResponse =
       await verifyRegistrationResponse({
-        response: body,
+        response: registrationResponse,
         expectedChallenge: user.currentChallenge,
         expectedOrigin: this.origin,
         expectedRPID: this.rpID,
       });
 
-    const { verified } = verification;
+    const { registrationInfo, verified } = verification;
 
     if (!verified) {
       throw new Error('Registration verification failed');
     }
-    return verification;
-  }
 
-  async savePasskey(
-    user: UserDocument,
-    verification: VerifiedRegistrationResponse,
-  ): Promise<Passkey> {
-    const { registrationInfo } = verification;
     const { credential } = registrationInfo!;
 
-    const passkey: Passkey = {
+    const passkeyData: Passkey = {
       cred_id: credential.id,
       cred_public_key: Buffer.from(credential.publicKey),
       webauthn_user_id: user._id.toString(),
@@ -139,13 +102,22 @@ export class AuthService {
       created_at: new Date(),
     };
 
-    user.passkeys.push(passkey);
-    await user.save();
+    const passkey = await this.passkeyService.createPasskey(passkeyData);
+    await this.userService.savePasskey(user._id, passkey);
 
-    return passkey;
+    return verification.verified;
   }
 
-  async generateLoginOptions(user: UserDocument) {
+  async generateLoginOptions({
+    email,
+  }: {
+    email: CreateUserDto['email'];
+  }): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const user = await this.userService.findUserByEmail(email);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
     const options: PublicKeyCredentialRequestOptionsJSON =
       await generateAuthenticationOptions({
         rpID: this.rpID,
@@ -156,26 +128,27 @@ export class AuthService {
       });
 
     user.currentChallenge = options.challenge;
-
-    await this.userModel.findOneAndUpdate(
-      {
-        _id: user._id,
-      },
-      {
-        currentChallenge: options.challenge,
-      },
-    );
+    await this.userService.updateUser(user._id, {
+      currentChallenge: options.challenge,
+    });
 
     return options;
   }
 
-  async verifyLogin(
-    body: AuthenticationResponseJSON,
-    user: UserDocument,
-  ): Promise<VerifiedAuthenticationResponse> {
+  async verifyLogin({
+    email,
+    loginResponse,
+  }: {
+    email: CreateUserDto['email'];
+    loginResponse: AuthenticationResponseJSON;
+  }): Promise<VerifiedAuthenticationResponse> {
+    const user = await this.userService.findUserByEmail(email);
+    if (!user) {
+      throw new Error('User not found');
+    }
     const verification: VerifiedAuthenticationResponse =
       await verifyAuthenticationResponse({
-        response: body,
+        response: loginResponse,
         expectedChallenge: user.currentChallenge,
         expectedOrigin: this.origin,
         expectedRPID: this.rpID,

@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { AuthenticatorTransportFuture } from '@simplewebauthn/server';
+import { HydratedDocument } from 'mongoose';
 
+export type PasskeyDocument = HydratedDocument<Passkey>;
 @Schema()
 export class Passkey {
   @Prop({ required: true })

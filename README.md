@@ -82,19 +82,6 @@ You can access it from other devices on your LAN using `http://<your-local-ip>:3
    ```
    - Completes login.
 
-## Project Structure
-
-```
-src/
-  auth/
-    auth.controller.ts
-    auth.service.ts
-    schema/
-      user.schema.ts
-      passkeys.schema.ts
-  main.ts
-```
-
 ## Notes
 
 - This project is for educational/demo purposes.
